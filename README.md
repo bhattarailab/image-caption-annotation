@@ -9,6 +9,8 @@
 ### Usage
 You can download executable (.exe) file directly from the drive link: <a href="https://drive.google.com/file/d/1aVcBw_2yDv8Ba7yXj2WnOTeY818ff5w7/view?usp=drive_link">Textannotator.exe</a>
 
+OR
+
 If you want to install the software locally through source code, simply do the following:
 ```bash
 git clone https://github.com/sandeshpokhrel54/Image_caption_annotation
