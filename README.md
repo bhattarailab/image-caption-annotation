@@ -14,6 +14,8 @@ cd Image_caption_annotation
 pip install -r requirements.txt
 python caption.py
 ```
+You can download executable (.exe) file directly from the drive link: <<a href="https://drive.google.com/file/d/1aVcBw_2yDv8Ba7yXj2WnOTeY818ff5w7/view?usp=drive_link">Textannotator.exe</a>
+
 Then, you will be prompted to select the image folder and json file of a class.
 <br>
 - First Select the Image Folder
