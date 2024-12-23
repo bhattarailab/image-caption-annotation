@@ -7,7 +7,7 @@
 <img src="https://github.com/sandeshpokhrel54/Image_caption_annotation/blob/main/demos/demo1.jpeg" width="600" alt="Medical image annotation">
 
 ### Usage
-You can download executable (.exe) file directly from the drive link: <a href="https://drive.google.com/file/d/1aVcBw_2yDv8Ba7yXj2WnOTeY818ff5w7/view?usp=drive_link">Textannotator.exe</a>
+You can download executable (.exe) file directly from the drive link: <a href="https://drive.google.com/file/d/1CdaMpI6-JBKav7Y3f_ne_ZTPn4au_tyj/view?usp=sharing">Textannotator.exe</a>
 
 OR
 
