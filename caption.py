@@ -4,7 +4,7 @@ import json
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, 
     QHBoxLayout, QWidget, QFileDialog, QTextEdit, QPushButton, QMessageBox, 
     QLineEdit, QSplitter, QFrame)
-from PyQt5.QtGui import QPixmap, QIntValidator, QTextCharFormat, QColor
+from PyQt5.QtGui import QPixmap, QIntValidator, QTextCharFormat, QColor, QTextCursor
 from PyQt5.QtCore import Qt
 
 class TextAnnotationWidget(QWidget):
@@ -55,11 +55,23 @@ class TextAnnotationWidget(QWidget):
         else:
             format.setBackground(QColor('#FFB6C1'))  # Light red
             
-        # Store the annotation
+        # Store the new annotation
         start = cursor.selectionStart()
         end = cursor.selectionEnd()
         selected_text = cursor.selectedText()
+
+        # Check for overlapping annotations and remove them
+        overlapping_keys = []
+        for key, annotation in self.annotations.items():
+            # Check if the new selection overlaps with existing annotation
+            if not (end <= annotation['start'] or start >= annotation['end']):
+                overlapping_keys.append(key)
         
+        # Remove overlapping annotations
+        for key in overlapping_keys:
+            del self.annotations[key]
+            
+        # Add the new annotation
         self.annotations[f"{start}-{end}"] = {
             'text': selected_text,
             'type': mark_type,
@@ -67,15 +79,69 @@ class TextAnnotationWidget(QWidget):
             'end': end
         }
         
-        cursor.mergeCharFormat(format)
+        # Reapply all annotations to ensure proper visualization
+        self.reapply_all_annotations()
 
-    def clear_marks(self):
-        self.text_editor.selectAll()
+    def reapply_all_annotations(self):
+        # Store current cursor position
+        current_cursor = self.text_editor.textCursor()
+        current_position = current_cursor.position()
+        
+        # First clear all formatting
+        document = self.text_editor.document()
+        cursor = QTextCursor(document)
+        cursor.select(QTextCursor.Document)
         format = QTextCharFormat()
         format.setBackground(QColor('white'))
-        self.text_editor.textCursor().mergeCharFormat(format)
+        cursor.mergeCharFormat(format)
+        
+        # Sort annotations by start position
+        sorted_annotations = sorted(
+            self.annotations.values(), 
+            key=lambda x: x['start']
+        )
+        
+        # Reapply each annotation
+        cursor = QTextCursor(document)
+        for annotation in sorted_annotations:
+            cursor.setPosition(annotation['start'])
+            cursor.setPosition(annotation['end'], QTextCursor.KeepAnchor)
+            
+            format = QTextCharFormat()
+            if annotation['type'] == 'correct':
+                format.setBackground(QColor('#90EE90'))
+            else:
+                format.setBackground(QColor('#FFB6C1'))
+                
+            cursor.mergeCharFormat(format)
+        
+        # Restore cursor to previous position without selection
+        current_cursor.setPosition(current_position)
+        self.text_editor.setTextCursor(current_cursor)
+        
+        # Force update
+        self.text_editor.viewport().update()
+
+    def clear_marks(self):
+        # Store current cursor position
+        cursor = self.text_editor.textCursor()
+        current_position = cursor.position()
+        
+        # Clear formatting
+        cursor.select(QTextCursor.Document)
+        format = QTextCharFormat()
+        format.setBackground(QColor('white'))
+        cursor.mergeCharFormat(format)
+        
+        # Restore cursor to previous position without selection
+        cursor.setPosition(current_position)
+        self.text_editor.setTextCursor(cursor)
+        
         self.annotations = {}
         self.correction_editor.clear()
+        
+        # Force update
+        self.text_editor.viewport().update()
 
     def get_annotations_data(self):
         return {
@@ -88,23 +154,30 @@ class TextAnnotationWidget(QWidget):
         if not data:
             return
             
+        # Clear marks without selecting all text
         self.clear_marks()
+        
+        # Set text without selecting it
+        cursor = self.text_editor.textCursor()
+        cursor.setPosition(0)
+        self.text_editor.setTextCursor(cursor)
+        
         self.text_editor.setPlainText(data.get('original_text', ''))
         self.correction_editor.setPlainText(data.get('corrections', ''))
         
-        # Restore annotations
+        # Set annotations
+        self.annotations = data.get('annotations', {})
+        
+        # Apply all annotations
+        self.reapply_all_annotations()
+        
+        # Move cursor to start without selection
         cursor = self.text_editor.textCursor()
-        for annotation in data.get('annotations', {}).values():
-            cursor.setPosition(annotation['start'])
-            cursor.setPosition(annotation['end'], cursor.KeepAnchor)
-            
-            format = QTextCharFormat()
-            if annotation['type'] == 'correct':
-                format.setBackground(QColor('#90EE90'))
-            else:
-                format.setBackground(QColor('#FFB6C1'))
-                
-            cursor.mergeCharFormat(format)
+        cursor.setPosition(0)
+        self.text_editor.setTextCursor(cursor)
+        
+        # Force update
+        self.text_editor.viewport().update()
 
 class LabelingWindow(QMainWindow):
     def __init__(self):
@@ -121,9 +194,16 @@ class LabelingWindow(QMainWindow):
         # Create a splitter for image and annotation
         self.splitter = QSplitter(Qt.Horizontal)
         
-        # Left side - Image
+        # Left side - Image and image name
         self.image_widget = QWidget()
         self.image_layout = QVBoxLayout(self.image_widget)
+        
+        # Add image name label
+        self.image_name_label = QLabel()
+        self.image_name_label.setAlignment(Qt.AlignCenter)
+        self.image_name_label.setStyleSheet("font-weight: bold; padding: 5px;")
+        self.image_layout.addWidget(self.image_name_label)
+        
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_layout.addWidget(self.image_label)
@@ -203,19 +283,14 @@ class LabelingWindow(QMainWindow):
                 last_modified_image = f.read().strip()
             if last_modified_image in self.image_names:
                 return self.image_names.index(last_modified_image)
-        
-        # If last_modified.txt doesn't exist or the image is not found, start with the first unannotated image
-        return self.find_first_unannotated()
-    
-    def find_first_unannotated(self):
-        # for index, image_name in enumerate(self.image_names):
-        #     if not self.captions[image_name].strip():
-        #         return index
-        return 0  # If all images are annotated, start from the beginning
+        return 0
 
     def load_image(self, image_name):
         image_path = os.path.join(self.image_dir, image_name)
         if os.path.exists(image_path):
+            # Update image name label
+            self.image_name_label.setText(f"Image Name: {image_name}")
+            
             pixmap = QPixmap(image_path)
             scaled_pixmap = pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.image_label.setPixmap(scaled_pixmap)
@@ -299,9 +374,6 @@ class LabelingWindow(QMainWindow):
                 QMessageBox.warning(self, "Invalid Image Number", "Please enter a valid image number.")
         except ValueError:
             QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
-
-    # Keep other methods (get_starting_index, find_first_unannotated, etc.) the same
-    # but update their implementation to work with the new data structure if needed
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
