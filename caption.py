@@ -6,21 +6,51 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout,
     QLineEdit, QSplitter, QFrame)
 from PyQt5.QtGui import QPixmap, QIntValidator, QTextCharFormat, QColor, QTextCursor
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QUndoCommand, QUndoStack
+
+class AnnotationCommand(QUndoCommand):
+    def __init__(self, widget, old_annotations, new_annotations, description):
+        super().__init__(description)
+        self.widget = widget
+        self.old_annotations = old_annotations.copy()
+        self.new_annotations = new_annotations.copy()
+
+    def undo(self):
+        self.widget.annotations = self.old_annotations.copy()
+        self.widget.reapply_all_annotations()
+
+    def redo(self):
+        self.widget.annotations = self.new_annotations.copy()
+        self.widget.reapply_all_annotations()
 
 class TextAnnotationWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         
+        # Initialize undo stack
+        self.undo_stack = QUndoStack(self)
+        
         # Original text editor
         self.text_editor = QTextEdit()
         self.text_editor.setPlaceholderText("Original caption")
+        self.text_editor.setUndoRedoEnabled(True)
         
-        # Buttons for marking text
+        # Buttons for marking text and undo/redo
         button_layout = QHBoxLayout()
+        
+        # Undo/Redo buttons
+        self.undo_btn = QPushButton("Undo")
+        self.redo_btn = QPushButton("Redo")
+        self.undo_btn.setShortcut("Ctrl+Z")
+        self.redo_btn.setShortcut("Ctrl+Y")
+        
         self.mark_correct_btn = QPushButton("Mark Correct")
         self.mark_incorrect_btn = QPushButton("Mark Incorrect")
         self.clear_marks_btn = QPushButton("Clear Marks")
+        
+        button_layout.addWidget(self.undo_btn)
+        button_layout.addWidget(self.redo_btn)
         button_layout.addWidget(self.mark_correct_btn)
         button_layout.addWidget(self.mark_incorrect_btn)
         button_layout.addWidget(self.clear_marks_btn)
@@ -28,11 +58,14 @@ class TextAnnotationWidget(QWidget):
         # Correction editor
         self.correction_editor = QTextEdit()
         self.correction_editor.setPlaceholderText("Enter corrections for incorrect parts here")
+        self.correction_editor.setUndoRedoEnabled(True)
         
         # Connect buttons
         self.mark_correct_btn.clicked.connect(lambda: self.mark_text('correct'))
         self.mark_incorrect_btn.clicked.connect(lambda: self.mark_text('incorrect'))
         self.clear_marks_btn.clicked.connect(self.clear_marks)
+        self.undo_btn.clicked.connect(self.undo)
+        self.redo_btn.clicked.connect(self.redo)
         
         # Add widgets to layout
         layout.addWidget(QLabel("Original Caption:"))
@@ -44,10 +77,40 @@ class TextAnnotationWidget(QWidget):
         # Store annotations
         self.annotations = {}
         
+        # Update undo/redo button states
+        self.undo_stack.canUndoChanged.connect(self.update_undo_button)
+        self.undo_stack.canRedoChanged.connect(self.update_redo_button)
+        self.update_undo_button()
+        self.update_redo_button()
+
+    def update_undo_button(self):
+        self.undo_btn.setEnabled(self.undo_stack.canUndo())
+
+    def update_redo_button(self):
+        self.redo_btn.setEnabled(self.undo_stack.canRedo())
+
+    def undo(self):
+        if self.text_editor.hasFocus():
+            self.text_editor.undo()
+        elif self.correction_editor.hasFocus():
+            self.correction_editor.undo()
+        else:
+            self.undo_stack.undo()
+
+    def redo(self):
+        if self.text_editor.hasFocus():
+            self.text_editor.redo()
+        elif self.correction_editor.hasFocus():
+            self.correction_editor.redo()
+        else:
+            self.undo_stack.redo()
+        
     def mark_text(self, mark_type):
         cursor = self.text_editor.textCursor()
         if not cursor.hasSelection():
             return
+            
+        old_annotations = self.annotations.copy()
             
         format = QTextCharFormat()
         if mark_type == 'correct':
@@ -78,6 +141,15 @@ class TextAnnotationWidget(QWidget):
             'start': start,
             'end': end
         }
+        
+        # Create and push undo command
+        command = AnnotationCommand(
+            self, 
+            old_annotations, 
+            self.annotations.copy(),
+            f"Mark text as {mark_type}"
+        )
+        self.undo_stack.push(command)
         
         # Reapply all annotations to ensure proper visualization
         self.reapply_all_annotations()
@@ -123,6 +195,8 @@ class TextAnnotationWidget(QWidget):
         self.text_editor.viewport().update()
 
     def clear_marks(self):
+        old_annotations = self.annotations.copy()
+        
         # Store current cursor position
         cursor = self.text_editor.textCursor()
         current_position = cursor.position()
@@ -138,7 +212,15 @@ class TextAnnotationWidget(QWidget):
         self.text_editor.setTextCursor(cursor)
         
         self.annotations = {}
-        self.correction_editor.clear()
+        
+        # Create and push undo command
+        command = AnnotationCommand(
+            self,
+            old_annotations,
+            self.annotations.copy(),
+            "Clear all marks"
+        )
+        self.undo_stack.push(command)
         
         # Force update
         self.text_editor.viewport().update()
