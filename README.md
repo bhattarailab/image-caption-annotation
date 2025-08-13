@@ -1,7 +1,8 @@
 ## Vision Language Annotation Tool
 - A simple Python script to annotate image files with descriptions.
 - Opens images and their associated text side by side from a JSON file.
-- Selects images from a user-selected directory.
+- Selects images from a user-selected directory.  
+- Select certain region of text and mark as correct or incorrect.  
 
 ### Demo image
 <img src="https://github.com/sandeshpokhrel54/Image_caption_annotation/blob/main/demos/demo1.jpeg" width="600" alt="Medical image annotation">
